@@ -225,9 +225,9 @@ there are also: class drivers, miniclass drivers, port drivers, miniport drivers
 the i/o system drives the execution of device drivers. device drivers consist of a set of routines that are called to process the various stages of an i/o request.
 > this is important! drivers aren't programs that run infinitely like usermode programs might, they are (or should be) purely reactive.
 	
+
 the key routines of a driver are:  
-> or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?  
-1. the initialization routine: set to GSDriverEntry by the WDK. GSDriverEntry sets up the stack cookie then calls our DriverEntry, which should register the rest of its routines with the i/o manager and perform any other global initialization
+1. the initialization routine: set to GSDriverEntry by the WDK. GSDriverEntry sets up the stack cookie then calls our DriverEntry, which should register the rest of its routines with the i/o manager and perform any other global initialization.
 2. an add-device routine: seems to only be for plug-n-play drivers. creates the device object.
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
 4. a start i/o routine: seems to be for actual hardware device drivers? not fully sure.
@@ -237,8 +237,9 @@ the key routines of a driver are:
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
 9. fast-dispatch routines: i don't get these at all. "drivers that make use of the cache manager (??) provide these routines to allow the kernel to bypass typical i/o processing when accessing the driver. [...]. Fast dispatch routines are also used as a mechanism for callbacks from the memory manager and cache manager to file-system drivers.".
 10. unload routine: for cleaning up system resources, allows the i/o manager to unload the driver entirely. only invoked when all file handles to the device are closed.
-11. system shutdown notification routine: same as above, but invoked when the system is shutting down
+11. system shutdown notification routine: same as above, but invoked when the system is shutting down.
 12. error-logging routines: seems like something any smart dev would write. basically just DbgPrint. doesn't sound like it's something that's actually registered anywhere.
+> #5: or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
 > #9: so are they basically just for file-system drivers?  
 > i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.  
 > i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
