@@ -169,8 +169,9 @@ the fundamental idea behind an IRQL is that lower IRQL code cannot interfere wit
 > wait, why vice versa? couldn't code executing at a higher IRQL modify code that executes at a lower IRQL?  
 	
 the most important IRQLs are:  
-> there are 3 types of APCs, usermode APCs and normal kernel APCs execute at irql 0. special kernel APCs execute at irql 1.  
+
 * 0 - passive / low  
+	> there are 3 types of APCs, usermode APCs and normal kernel APCs execute at irql 0. special kernel APCs execute at irql 1.  
 * 1 - APC (async procedure calls)
 * 2 - dispatch / DPC (deferred procedure calls)
 * 3 - start of device IRQLs (ends at 12)
@@ -227,22 +228,25 @@ the i/o system drives the execution of device drivers. device drivers consist of
 	
 
 the key routines of a driver are:  
+
 1. the initialization routine: set to GSDriverEntry by the WDK. GSDriverEntry sets up the stack cookie then calls our DriverEntry, which should register the rest of its routines with the i/o manager and perform any other global initialization.
 2. an add-device routine: seems to only be for plug-n-play drivers. creates the device object.
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
 4. a start i/o routine: seems to be for actual hardware device drivers? not fully sure.
 5. an interrupt service routine (ISR): only for drivers that handle interrupt-driven devices.
+	> #5: or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
 6. an interrupt-servicing DPC routine: basically the second part of the ISR.
 7. one or more i/o completion routines: not entirely sure how these are used in practice, but seems like it might be useful? basically a callback.
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
 9. fast-dispatch routines: i don't get these at all. "drivers that make use of the cache manager (??) provide these routines to allow the kernel to bypass typical i/o processing when accessing the driver. [...]. Fast dispatch routines are also used as a mechanism for callbacks from the memory manager and cache manager to file-system drivers.".
+> #9: so are they basically just for file-system drivers?
+>
+> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.
+>
+> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 10. unload routine: for cleaning up system resources, allows the i/o manager to unload the driver entirely. only invoked when all file handles to the device are closed.
 11. system shutdown notification routine: same as above, but invoked when the system is shutting down.
 12. error-logging routines: seems like something any smart dev would write. basically just DbgPrint. doesn't sound like it's something that's actually registered anywhere.
-> #5: or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
-> #9: so are they basically just for file-system drivers?  
-> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.  
-> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 
 when a thread opens a handle to a file object, the i/o manager must determine from the file object's name which driver it should call to process the i/o request. the i/o manager must also be able to locate this information the next time a thread uses the same file handle.
 > this is important. really changes how i think about file handles.  
@@ -312,6 +316,7 @@ scatter/gather io exists: ReadFileScatter & WriteFileGather. "allows issuing a s
 (IRPs)  
 when a thread calls an i/o api, the i/o manager constructs an IRP to represent the operation as it travels through the i/o system.  
 if possible, the i/o manager allocates IRPs from one of three per-processor IRP non-paged look-aside lists:  
+
 1. the small-IRP look-aside list: stores IRPs with one stack location
 2. the medium-IRP look-aside list: stores IRPs with up to four stack locations
 3. the large-IRP look-aside list: stores IRPs with more than four stack locations
@@ -324,6 +329,7 @@ these lists are also backed by global look-aside lists for cross-CPU IRP flow.
 if an IRP requires more stack locations than any IRP in the large-IRP look-aside list contains, then the i/o manager allocates IRPs from the non-paged pool via the IoAllocateIrp function (which is also exposed to driver developers).
 
 the IRP structure contains a lot of useful stuff i think?  
+
 * MdlAddress (points to Mdl)
 	> Memory Descriptor List - a structure that represents information for a buffer in physical memory.
 * associated IRP union (MasterIrp(?), IrpCount(?), and SystemBuffer(?))
@@ -332,7 +338,7 @@ the IRP structure contains a lot of useful stuff i think?
 * IoStatus struct
 * user event (?)
 * user buffer
-* cancel routine 
+* cancel routine
 	> does the driver have to set the cancel routine for EACH IRP it receives or just register it once in DriverEntry and then the i/o manager sets it in each IRP sent to that driver?
 * array of IO_STACK_LOCATION structs(?)
 	
@@ -342,6 +348,7 @@ the number of stack locations is equal to the number of layered devices in the d
 the i/o manager initializes the irp body and the first stack location only. each layer in the device node is responsible for initializing the next i/o stack location if it decides to pass the irp down to the next device.
 
 IO_STACK_LOCATION struct:  
+
 * major function (indicates the type of request)
 * minor function (augments certain major functions)
 * parameters (union of many structs, specific to the type of request)
@@ -417,11 +424,12 @@ driver verifier is a thing, it might be useful for development. i mean it is mea
 ## DRIVER LOADING ##
 the HKLM\System\CurrentControlSet\Services registry key contains some key parts.
 mainly, the Start value of a driver indicates when it starts, and this can be:  
-* 0 \- boot-start (loaded by the boot loader)
+
+* 0 - boot-start (loaded by the boot loader)
 	> #0: by the boot loader! that's crazy. absolutely crazy to think about.
-* 1 \- system-start (loaded after the executive is initialized)
-* 2 & 3 \- loaded by the service control manager or on demand
-* 4 \- not loaded, disabled.
+* 1 - system-start (loaded after the executive is initialized)
+* 2 & 3 - loaded by the service control manager or on demand
+* 4 - not loaded, disabled.
 
 the I/O manager loads the driver into the kernel and controls the execution. always.  
 the i/o manager executes GSDriverEntry when it loads the driver. GSDriverEntry sets up the stack cookie to protect against overflow and probably does some other initialization stuff.  
@@ -460,6 +468,7 @@ book mentions "huge pages" which are 1 GB in size, created automatically when re
 > if they are real, does that mean there can be a 1 GB, contiguous, always-resident, single-protected range of physical memory? that's wild.
 
 the memory manager requires synchronization objects to be used for the following system-structures:  
+
 1. dynamically allocated portions of system virtual address space
 2. system working sets
 	> okay, what are working sets? i keep seeing it used in contexts that don't match my understanding of it
@@ -472,6 +481,7 @@ the memory manager requires synchronization objects to be used for the following
 8. each entry in the page frame number (PFN) database
 
 additionally, per-process structures that require synchronization objects (both use pushlocks):  
+
 1. working set lock
 2. address space lock - held whenever the address space is being changed
 
@@ -549,10 +559,11 @@ the process's page tables are kept in kernel-mode-only accessible pages so user-
 session space is a thing. sessions as in userlogon sessions. it occupies its own space in the kernel and is mapped to each process's space.
 
 system space is the global space visible to kernel code existing in the context of any process / thread, it contains:  
+
 * the OS image, HAL, and drivers used to boot the system
 * nonpaged pool
 * paged pool
-* system cache (virtual address space used to map files open in the system cache) 
+* system cache (virtual address space used to map files open in the system cache)
 	> is the system cache how win10 fakes shutting down?
 * system page table entries (PTEs). used to map system pages such as i/o space, kernel stacks, and memory descriptor lists (MDLs)
 * system working set lists
@@ -665,6 +676,7 @@ if the valid bit of a PTE is zero, the PTE will raise an exception and the MMU w
 such PTEs are referred to as software PTEs because they are processed by the OS rather than the MMU.  
 the formats of these software PTEs vary depending on what it's meant to resolve.  
 some formats:  
+
 * Page file
 * Demand-zero
 * Virtual address descriptor (VAD)
@@ -681,6 +693,7 @@ when a shared page is made valid, both the process PTE and prototype PTE point t
 to track the number of process PTEs that reference a valid shared page, a counter in its PFN database entry is incremented, allowing the memory manager to determine when a shared page is no longer referenced by any PT and thus can be made invalid and moved to a transition list or written to disk.  
 when the shareable page is invalidated, the PTE in the process page table is filled in with a(nother) special PTE that points to the prototype PTE, allowing the memory manager to locate the prototype PTE which in turn describes the actual page being referenced.  
 a shared page can be in one of six states, described by the prototype PTE:  
+
 1. Active/valid - it's in physical memory because another process accessed it
 	> what? what if it's in physical memory because this process accessed it?
 2. Transition - in memory but on the standby or modified list (or not on any list)
@@ -703,6 +716,7 @@ upon completion, the I/O system triggers an event, which wakes up the pager and 
 	
 while the paging I/O operation is in progress, the faulting thread doesn't own any critical memory management synchronization objects.  
 other threads within the process can issue virtual memory functions and handle page faults while the paging I/O takes place, which leads to some conditions the pager must recognize:  
+
 1. another thread could have faulted the same page (called a collided page fault)
 2. page could have been deleted and remapped
 	> so the owning process deleted it and a different process then maps it into its address space?
@@ -744,6 +758,7 @@ therefore, the commit limit and commit charge is to track all usages of these re
 
 commit charge is the system-wide total of all committed memory allocations that must be kept in RAM or paging files.  
 some non-obvious cases of commit charge:  
+
 1. non-paged and paged pool and other allocations in system-space contribute to the charge, even free regions of the system memory pools.
 2. kernel stacks
 3. page tables
@@ -789,7 +804,8 @@ working set expansion and trimming take place in the context of a system thread 
 the balance set manager waits on two event objects, one occurs every second, the other occurs when the memory manager signals that the working sets need to be adjusted.  
 > it has a whole step-by-step description of its operations, read through it if necessary.
 
-system working sets:
+system working sets:  
+
 1. System cache working set - contains pages that are resident in the system cache
 	> what's the system cache?
 2. paged pool working set - contains pages that are resident in the paged pool
@@ -806,6 +822,7 @@ on win10, these are stored in the MiState.SystemVa.SystemWs array. [0] = system 
 whereas working sets describe the resident pages owned by a process or the system, the PFN database describes the state of each page in physical memory.
 
 physical page states:  
+
 1. Active/Valid - part of a working set (process, session, or system), or not in any working set (eg; non-paged kernel page)
 2. Transition - paging I/O is in progress
 3. Standby - previously belonged to a working set but was removed or was prefetched / clustered, page wasn't modified since last written to disk
