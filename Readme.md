@@ -153,7 +153,7 @@ devices are treated as a type of virtual file (as are many other things in the O
 the CreateFile (and presumably other 'File' winapi functions) refer to anything with a symbolic link within the object manager's directory called GLOBAL??. it's anything that's represented by a FILE_OBJECT structure.  
 > something kinda neat: 'C:' is a symbolic link to \Device\HarddiskVolume7 (the number might be different on your system)  
 > in driver code, just the ?? string references the GLOBAL?? directory  
->* this is weird? how?  
+> ^ this is weird? how?  
 		
 "When a device interrupt occurs, the processor transfers control to the kernel trap handler, which indexes into its interrupt dispatch table to locate the ISR for the device."
 > how does a device interrupt?  
@@ -169,12 +169,12 @@ the fundamental idea behind an IRQL is that lower IRQL code cannot interfere wit
 > wait, why vice versa? couldn't code executing at a higher IRQL modify code that executes at a lower IRQL?  
 	
 the most important IRQLs are:  
-* 0 \- passive / low
-* 1 \- APC (async procedure calls)
-	> there are 3 types of APCs, usermode APCs and normal kernel APCs execute at irql 0. special kernel APCs execute at irql 1.
-* 2 \- dispatch / DPC (deferred procedure calls)
-* 3 \- start of device IRQLs (ends at 12)
-* 15 \- highest IRQL on x64
+> there are 3 types of APCs, usermode APCs and normal kernel APCs execute at irql 0. special kernel APCs execute at irql 1.  
+* 0 - passive / low  
+* 1 - APC (async procedure calls)
+* 2 - dispatch / DPC (deferred procedure calls)
+* 3 - start of device IRQLs (ends at 12)
+* 15 - highest IRQL on x64
 
 IRQLs are not the same as IRQs (interrupt request). IRQs are hardware lines connecting devices to an interrupt controller.
 
@@ -231,17 +231,17 @@ the key routines of a driver are:
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
 4. a start i/o routine: seems to be for actual hardware device drivers? not fully sure.
 5. an interrupt service routine (ISR): only for drivers that handle interrupt-driven devices.
-	> #5: or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
+	> or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
 6. an interrupt-servicing DPC routine: basically the second part of the ISR.
 7. one or more i/o completion routines: not entirely sure how these are used in practice, but seems like it might be useful? basically a callback.
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
 9. fast-dispatch routines: i don't get these at all. "drivers that make use of the cache manager (??) provide these routines to allow the kernel to bypass typical i/o processing when accessing the driver. [...]. Fast dispatch routines are also used as a mechanism for callbacks from the memory manager and cache manager to file-system drivers.".
-	> #9: so are they basically just for file-system drivers?  
-	> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.  
-	> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 10. unload routine: for cleaning up system resources, allows the i/o manager to unload the driver entirely. only invoked when all file handles to the device are closed.
 11. system shutdown notification routine: same as above, but invoked when the system is shutting down
 12. error-logging routines: seems like something any smart dev would write. basically just DbgPrint. doesn't sound like it's something that's actually registered anywhere.
+> #9: so are they basically just for file-system drivers?  
+> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.  
+> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 
 when a thread opens a handle to a file object, the i/o manager must determine from the file object's name which driver it should call to process the i/o request. the i/o manager must also be able to locate this information the next time a thread uses the same file handle.
 > this is important. really changes how i think about file handles.  
@@ -314,7 +314,7 @@ if possible, the i/o manager allocates IRPs from one of three per-processor IRP 
 1. the small-IRP look-aside list: stores IRPs with one stack location
 2. the medium-IRP look-aside list: stores IRPs with up to four stack locations
 3. the large-IRP look-aside list: stores IRPs with more than four stack locations
-	> #3: sounds like each IRP in here is initialized with 14 stack locations, and once per minute is adjusted up to a maximum of 20.
+	> sounds like each IRP in here is initialized with 14 stack locations, and once per minute is adjusted up to a maximum of 20.
 		
 these lists are also backed by global look-aside lists for cross-CPU IRP flow.
 > what does it mean 'backed by'? are they literally just copies?  
