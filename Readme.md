@@ -120,7 +120,8 @@ MmAccessFault
 
 # IO SYSTEM #
 -----------
-the i/o system was designed to provide an abstraction of devices (both physical and software/logical), with the following features:
+the i/o system was designed to provide an abstraction of devices (both physical and software/logical), with the following features:  
+
 1. uniform security and naming across devices to protect shareable resources
 	> i don't understand what specifically is being referred to with "shareable resources". maybe it's not meant to be specific.
 2. high-performance asynchronous packet-based I/O
@@ -132,11 +133,11 @@ the i/o system was designed to provide an abstraction of devices (both physical 
 8. support for multiple file systems (FAT, NTFS, UDF, etc)
 9. WMI support and diagnosability *(this can't be a word)* so drivers can be managed and monitored through WMI apps
 	
-the i/o manager is the heart of the i/o system. the pnp manager works closely with the i/o manager. the power manager also exists.\
+the i/o manager is the heart of the i/o system. the pnp manager works closely with the i/o manager. the power manager also exists.  
 i'll mostly be taking notes on the i/o manager part.
 
-a driver provides an i/o interface for a particular type of device.\
-the driver is a software module that interprets high-level commands and issues low-level, device-specific commands.\
+a driver provides an i/o interface for a particular type of device.  
+the driver is a software module that interprets high-level commands and issues low-level, device-specific commands.  
 drivers receive commands routed to them by the i/o manager that are directed at the devices they manage, and they inform the i/o manager when those commands are complete.
 
 the registry serves as a database that stores a description of basic devices attached to the system.
@@ -145,28 +146,29 @@ inf files are driver insallation files, they're plain text scripts basically. ca
 
 the hardware abstraction layer (HAL) insulates drivers from the specifics of the processor and interrupt controller by providing APIs that take care of the differences between platforms.
 
-most i/o requests are represented by an i/o request packet (IRP) structure. fast i/o is the exception - it doesn't use IRPs.\
+most i/o requests are represented by an i/o request packet (IRP) structure. fast i/o is the exception - it doesn't use IRPs.  
 IRPs are sent from the i/o manager to the driver, the driver processes it, then sends it back to the i/o manager (either because it's complete or because it's to be sent to another driver in the chain). the i/o manager then disposes of the packet or passes it to the next driver.
 
-devices are treated as a type of virtual file (as are many other things in the OS), and so a usermode client calling CreateFile to get a handle to a device for sending i/o requests to its driver makes sense.\
-the CreateFile (and presumably other 'File' winapi functions) refer to anything with a symbolic link within the object manager's directory called GLOBAL??. it's anything that's represented by a FILE_OBJECT structure.\
-> something kinda neat: 'C:' is a symbolic link to \Device\HarddiskVolume7 (the number might be different on your system)\
-> in driver code, just the ?? string references the GLOBAL?? directory
->* this is weird? how?
+devices are treated as a type of virtual file (as are many other things in the OS), and so a usermode client calling CreateFile to get a handle to a device for sending i/o requests to its driver makes sense.  
+the CreateFile (and presumably other 'File' winapi functions) refer to anything with a symbolic link within the object manager's directory called GLOBAL??. it's anything that's represented by a FILE_OBJECT structure.  
+> something kinda neat: 'C:' is a symbolic link to \Device\HarddiskVolume7 (the number might be different on your system)  
+> in driver code, just the ?? string references the GLOBAL?? directory  
+>* this is weird? how?  
 		
 "When a device interrupt occurs, the processor transfers control to the kernel trap handler, which indexes into its interrupt dispatch table to locate the ISR for the device."
-> how does a device interrupt?\
-> is this something only hardware can do or can it be done from a software-only driver?\
-> in other words, is this kind of interrupt the same as setting IRQL to > 2 via KeRaiseIrql?
+> how does a device interrupt?  
+> is this something only hardware can do or can it be done from a software-only driver?  
+> in other words, is this kind of interrupt the same as setting IRQL to > 2 via KeRaiseIrql?  
 
 ## INTERRUPT REQUEST LEVELS AND DEFERRED PROCEDURE CALLS ##
-IRQL is techincally two separate things. the first one, sometimes broadly referred to as DIRQL (device IRQL), is a priority assigned to an interrupt source from a hardware device, set by the HAL. the second meaning is as a value associated with each CPU, in which case it can be considered as a register of the CPU (even though it's not an register).
-> the difference in the two meanings will probably never matter for kernel drivers, but it may be relevant when writing hypervisors?
+
+IRQL is techincally two separate things. the first one, sometimes broadly referred to as DIRQL (device IRQL), is a priority assigned to an interrupt source from a hardware device, set by the HAL. the second meaning is as a value associated with each CPU, in which case it can be considered as a register of the CPU (even though it's not an register).  
+> the difference in the two meanings will probably never matter for kernel drivers, but it may be relevant when writing hypervisors?  
 	
-the fundamental idea behind an IRQL is that lower IRQL code cannot interfere with higher IRQL code and vice versa.
-> wait, why vice versa? couldn't code executing at a higher IRQL modify code that executes at a lower IRQL?
+the fundamental idea behind an IRQL is that lower IRQL code cannot interfere with higher IRQL code and vice versa.  
+> wait, why vice versa? couldn't code executing at a higher IRQL modify code that executes at a lower IRQL?  
 	
-the most important IRQLs are:
+the most important IRQLs are:  
 * 0 \- passive / low
 * 1 \- APC (async procedure calls)
 	> there are 3 types of APCs, usermode APCs and normal kernel APCs execute at irql 0. special kernel APCs execute at irql 1.
@@ -176,7 +178,7 @@ the most important IRQLs are:
 
 IRQLs are not the same as IRQs (interrupt request). IRQs are hardware lines connecting devices to an interrupt controller.
 
-in user mode, the IRQL is always 0.\
+in user mode, the IRQL is always 0.  
 in kernel mode, you can call KeRaiseIrql and KeLowerIrql to raise/lower the IRQL of the current CPU.
 
 the kernel scheduler operates at IRQL 2.
@@ -186,7 +188,7 @@ if code raises its IRQL to 2 or higher then it cannot wait on kernel dispatcher 
 additionally, at IRQL 2 or higher, page faults cannot be resolved either. resolving the page fault would require a context switch and context switches aren't allowed. so at IRQL 2 or higher you can only access non-paged memory.
 
 device IRQLs (3+): when an interrupt arrives, the kernel trap dispatcher calls the appropriate interrupt service routine (ISR) and raises its IRQL to that of the associated interrupt.
-> kernel trap dispatcher is same as kernel trap handler?\
+> kernel trap dispatcher is same as kernel trap handler?  
 > indexes into the IDT (interrupt dispatch table) to get the ISR for the device
 	
 a deferred procedure call (DPC) exists to spend as little time as possible in high IRQLs. an ISR should do the bare minimum and then defer further processing to a lower IRQL via DPCs. when an ISR returns, if there are no additional device interrupts, the CPU irql will drop to 2 and begin executing queued DPCs.
@@ -194,7 +196,7 @@ a deferred procedure call (DPC) exists to spend as little time as possible in hi
 when an interrupt of a greater IRQL arrives, the cpu state is saved, the IRQL of the cpu is raised to the IRQL of the interrupt, and the ISR associated with that interrupt is called. there is no context switch. if the thread was in user mode, it switches to kernel mode when the interrupt arrives.
 > does the lack of a context switch open up the potential for exploits?
 
-ISRs queue DPCs via KeInsertQueueDpc.\
+ISRs queue DPCs via KeInsertQueueDpc.  
 after an ISR returns, the CPU state is restored, and, if queued DPCs exist, then the IRQL is dropped to 2 and the kernel starts looping over the queued DPCs, otherwise the IRQL returns to its initial value.
 
 device interrupts can interrupt other interrupts. so an interrupt with IRQL 5 can be interrupted by one with a higher IRQL.
@@ -202,16 +204,16 @@ device interrupts can interrupt other interrupts. so an interrupt with IRQL 5 ca
 because interrupts are serviced by whatever thread the system decides, ISRs and DPCs shouldn't rely on any particular thread / process data.
 
 ## DEVICE DRIVERS ##
-there's all kinds of different drivers, basically.\
-usermode driver framework drivers (UMDF drivers) seem kinda neat. they communicate to the kernel-mode UMDF support library through advanced local procedure calls (ALPCs).\
+there's all kinds of different drivers, basically.  
+usermode driver framework drivers (UMDF drivers) seem kinda neat. they communicate to the kernel-mode UMDF support library through advanced local procedure calls (ALPCs).  
 aside from that, there's file-system drivers, plug and play drivers, and non-plug and play drivers.
 > we write non-plug and play, software-only drivers
 
-windows driver model drivers include three types: bus drivers, function drivers, and filter drivers.\
-bus drivers manage busses and present devices to function drivers via pnp\
-function drivers manage the actual device\
+windows driver model drivers include three types: bus drivers, function drivers, and filter drivers.  
+bus drivers manage busses and present devices to function drivers via pnp  
+function drivers manage the actual device  
 filter drivers layer above the function driver (upper filters) or above the bus driver (lower filters), augmenting their function.
-> not entirely sure what the typical use case of a filter driver would be\
+> not entirely sure what the typical use case of a filter driver would be  
 > took note of this primarily because there might be some trickery with installing our own filter driver below/above someone else's driver?
 
 this kind of hierarchy leads to the concept of a 'device node' (aka devnode). the bus driver creates the physical device object (PDO) and the function driver creates the functional device object (FDO) atop it, with filter device objects (FiDOs) between & above.
@@ -223,7 +225,7 @@ there are also: class drivers, miniclass drivers, port drivers, miniport drivers
 the i/o system drives the execution of device drivers. device drivers consist of a set of routines that are called to process the various stages of an i/o request.
 > this is important! drivers aren't programs that run infinitely like usermode programs might, they are (or should be) purely reactive.
 	
-the key routines of a driver are:\
+the key routines of a driver are:  
 1. the initialization routine: set to GSDriverEntry by the WDK. GSDriverEntry sets up the stack cookie then calls our DriverEntry, which should register the rest of its routines with the i/o manager and perform any other global initialization
 2. an add-device routine: seems to only be for plug-n-play drivers. creates the device object.
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
@@ -234,25 +236,25 @@ the key routines of a driver are:\
 7. one or more i/o completion routines: not entirely sure how these are used in practice, but seems like it might be useful? basically a callback.
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
 9. fast-dispatch routines: i don't get these at all. "drivers that make use of the cache manager (??) provide these routines to allow the kernel to bypass typical i/o processing when accessing the driver. [...]. Fast dispatch routines are also used as a mechanism for callbacks from the memory manager and cache manager to file-system drivers.".
-	> #9: so are they basically just for file-system drivers?\
-	> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.\
+	> #9: so are they basically just for file-system drivers?  
+	> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.  
 	> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 10. unload routine: for cleaning up system resources, allows the i/o manager to unload the driver entirely. only invoked when all file handles to the device are closed.
 11. system shutdown notification routine: same as above, but invoked when the system is shutting down
 12. error-logging routines: seems like something any smart dev would write. basically just DbgPrint. doesn't sound like it's something that's actually registered anywhere.
 
 when a thread opens a handle to a file object, the i/o manager must determine from the file object's name which driver it should call to process the i/o request. the i/o manager must also be able to locate this information the next time a thread uses the same file handle.
-> this is important. really changes how i think about file handles.\
+> this is important. really changes how i think about file handles.  
 > also makes me think how process handles and thread handles might be different, and how they might be similar.
 	
-the DRIVER_OBJECT and DEVICE_OBJECT structures fulfill this need for the i/o manager.\
-the i/o manager obtains the address of each of the driver's dispatch routines from the DRIVER_OBJECT.\
+the DRIVER_OBJECT and DEVICE_OBJECT structures fulfill this need for the i/o manager.  
+the i/o manager obtains the address of each of the driver's dispatch routines from the DRIVER_OBJECT.  
 the DEVICE_OBJECT contains other important fields such as the alignment it requires for buffers and the location of its device queue to hold incoming IRPs. the DEVICE_OBJECT is the target for all i/o operations, it is what the handle communicates with.
 
-the i/o manager creates the DRIVER_OBJECT when a driver is loaded into the system.\
+the i/o manager creates the DRIVER_OBJECT when a driver is loaded into the system.  
 the driver then creates the DEVICE_OBJECT(s) by calling IoCreateDevice or IoCreateDeviceSecure. PnP drivers do this in their add-device routine, non-PnP drivers usually do this in their DriverEntry.
 
-the DRIVER_OBJECT points to its first DEVICE_OBJECT.\
+the DRIVER_OBJECT points to its first DEVICE_OBJECT.  
 the DEVICE_OBJECT points back to its DRIVER_OBJECT and also to the next DEVICE_OBJECT (and has a lot of other important data, like the CurrentIrp or DeviceExtensions)
 
 windows is device-centric rather than driver-centric. a driver object represents the behavior of a driver, while individual device objects represent communication endpoints. on a system with four serial ports, there would be one driver binary and four device objects. each individual device can be interacted with without affecting the others.
@@ -261,8 +263,8 @@ windows is device-centric rather than driver-centric. a driver object represents
 device objects are named and put into the object manager namespace. they are placed in the \Device directory of this namespace, which is inaccessible to apps using WinAPI.
 > what exactly is a 'namespace' in this context? i see the \Device directory using the WinObj tool but don't really understand how or where it exists in the system. or how symbolic links in the \GLOBAL?? directory work at all. what operations take place to perform the symbolic link? what precisely IS the directory? is it just a struct in memory or is it on disk somewhere? if it's in memory then can it be paged?
 	
-a driver can expose its device object to usermode applications by creating a symbolic link in the \GLOBAL?? directory to the device object's name in the \Device directory. the IoCreateSymbolicLink function is used.\
-PnP drivers use IoRegisterDeviceInterface and IoSetDeviceInterfaceState to name their devices with a GUID.\
+a driver can expose its device object to usermode applications by creating a symbolic link in the \GLOBAL?? directory to the device object's name in the \Device directory. the IoCreateSymbolicLink function is used.  
+PnP drivers use IoRegisterDeviceInterface and IoSetDeviceInterfaceState to name their devices with a GUID.  
 usermode applications can open these pnp devices via SetupDiEnumDeviceInterfaces and SetupDiGetDeviceInterfaceDetail.
 
 usermode applications then call CreateFile/CreateFile2 with the device's symbolic name to open a handle to the device object for i/o.
@@ -293,34 +295,34 @@ usermode applications can perform asynchronous i/o requests. it's weird, i don't
 
 fast i/o is a special mechanism that allows the i/o system to bypass the generation of an IRP and instead goes directly to the driver stack to complete an i/o request. a driver registers its fast i/o entry points in the PFAST_IO_DISPATCH pointer in its DRIVER_OBJECT.
 
-mapped-file i/o is a tandem operation for the i/o system and memory manager (i took some notes on mapped files in the various sections of the memory manager below).\
-CreateFileMapping / MapViewOfFile / etc bring the file into the virtual address space of the process, allowing it to be written to via normal memory operations.\
+mapped-file i/o is a tandem operation for the i/o system and memory manager (i took some notes on mapped files in the various sections of the memory manager below).  
+CreateFileMapping / MapViewOfFile / etc bring the file into the virtual address space of the process, allowing it to be written to via normal memory operations.  
 the changes to the mapped-file are then written back to the actual file-on-disk via the memory manager's normal paging operations.
-> it says one major user of mapped file i/o is image activation (loading and running executable programs)\
-> i guess this makes sense. a process is just a kernel structure, then an exe and dlls are loaded into it as mapped files.\
+> it says one major user of mapped file i/o is image activation (loading and running executable programs)  
+> i guess this makes sense. a process is just a kernel structure, then an exe and dlls are loaded into it as mapped files.  
 > and i guess the changes aren't written back to disk because it's mapped as read-only / copy-on-write, so changes result in a new, modified page being created? and this page doesn't have links to the actual file on disk? i think the 'links' exist in the PTEs. mapped file-pages use different PTEs than normal memory pages. i think.
 		
 scatter/gather io exists: ReadFileScatter & WriteFileGather. "allows issuing a single read or write from more than one buffer in virtual memory to a contiguous area of a file on disk instead of issuing a separate i/o request for each buffer". 
-> not sure exactly what the use-case is? i guess reading a large section into a series of small buffers?\
+> not sure exactly what the use-case is? i guess reading a large section into a series of small buffers?  
 > is it only for reading/writing to files on disk, or is it for any FILE_OBJECT? sounds like it really is only for files on disk.
 	
 
 ## IO REQUEST PACKETS ##
-(IRPs)\
-when a thread calls an i/o api, the i/o manager constructs an IRP to represent the operation as it travels through the i/o system.\
-if possible, the i/o manager allocates IRPs from one of three per-processor IRP non-paged look-aside lists:
+(IRPs)  
+when a thread calls an i/o api, the i/o manager constructs an IRP to represent the operation as it travels through the i/o system.  
+if possible, the i/o manager allocates IRPs from one of three per-processor IRP non-paged look-aside lists:  
 1. the small-IRP look-aside list: stores IRPs with one stack location
 2. the medium-IRP look-aside list: stores IRPs with up to four stack locations
 3. the large-IRP look-aside list: stores IRPs with more than four stack locations
 	> #3: sounds like each IRP in here is initialized with 14 stack locations, and once per minute is adjusted up to a maximum of 20.
 		
 these lists are also backed by global look-aside lists for cross-CPU IRP flow.
-> what does it mean 'backed by'? are they literally just copies?\
+> what does it mean 'backed by'? are they literally just copies?  
 > also, probably really late to be wondering this, but what does it mean for something to be 'global' in this context? inversely, what does it mean for something to be per-processor? how would you access a global structure and how would you access a per-processor structure?
 	
 if an IRP requires more stack locations than any IRP in the large-IRP look-aside list contains, then the i/o manager allocates IRPs from the non-paged pool via the IoAllocateIrp function (which is also exposed to driver developers).
 
-the IRP structure contains a lot of useful stuff i think?
+the IRP structure contains a lot of useful stuff i think?  
 * MdlAddress (points to Mdl)
 	> Memory Descriptor List - a structure that represents information for a buffer in physical memory.
 * associated IRP union (MasterIrp(?), IrpCount(?), and SystemBuffer(?))
@@ -338,7 +340,7 @@ the number of stack locations is equal to the number of layered devices in the d
 	
 the i/o manager initializes the irp body and the first stack location only. each layer in the device node is responsible for initializing the next i/o stack location if it decides to pass the irp down to the next device.
 
-IO_STACK_LOCATION struct:
+IO_STACK_LOCATION struct:  
 * major function (indicates the type of request)
 * minor function (augments certain major functions)
 * parameters (union of many structs, specific to the type of request)
@@ -351,43 +353,43 @@ each IRP is usually queued in an IRP list associated with the thread that reques
 thread-agnostic i/o is an exception: it's stored in the file object
 > i think this is the only case where an IRP can be paged?
 
-drivers get a pointer to the stack location via IoGetCurrentIrpStackLocation.\
-drivers complete IRPs via IoCompleteRequest.\
+drivers get a pointer to the stack location via IoGetCurrentIrpStackLocation.  
+drivers complete IRPs via IoCompleteRequest.  
 drivers forward IRPs to the next layer via IoSkipCurrentIrpStackLocation (or via IoCopyIrpStackLocationToNext and IoGetNextIrpStackLocation) and finally IoCallDriver.
 
 
-accessing the usermode buffer supplied in the IRP can only be done in the requesting thread's context and only in IRQL 0 (so page faults can be handled).\
+accessing the usermode buffer supplied in the IRP can only be done in the requesting thread's context and only in IRQL 0 (so page faults can be handled).  
 the dispatch routine (initially) meets this criteria.
 > most of the time. there's some rare exception where an upper layer driver can hold onto an IRP and pass it on a different thread.
 
-the i/o manager enables access to the user-mode buffer when the criteria isn't met via buffered i/o and direct i/o.\
-for read/write requests (IRP_MJ_READ / IRP_MJ_WRITE) the Flags member on the DEVICE_OBJECT is checked for the DO_BUFFERED_IO or DO_DIRECT_IO bit.\
+the i/o manager enables access to the user-mode buffer when the criteria isn't met via buffered i/o and direct i/o.  
+for read/write requests (IRP_MJ_READ / IRP_MJ_WRITE) the Flags member on the DEVICE_OBJECT is checked for the DO_BUFFERED_IO or DO_DIRECT_IO bit.  
 for device i/o control requests (IRP_MJ_DEVICE_CONTROL) it's generated as part of the CTL_CODE macro (meaning it can be different per-control code).
 
-for buffered i/o, the i/o manager allocates a buffer that is the same size as the usermode buffer in non-paged pool and stores a pointer to it in the IRPs AssociatedIrp.SystemBuffer field. the driver should use this buffer if it knows it won't have access to the user buffer. \
-for read operations, when the IRP is completed, the i/o manager copies the SystemBuffer to the user buffer using a special kernel APC. \
+for buffered i/o, the i/o manager allocates a buffer that is the same size as the usermode buffer in non-paged pool and stores a pointer to it in the IRPs AssociatedIrp.SystemBuffer field. the driver should use this buffer if it knows it won't have access to the user buffer.   
+for read operations, when the IRP is completed, the i/o manager copies the SystemBuffer to the user buffer using a special kernel APC.   
 for write operations, the user buffer is copied into the system buffer when the i/o manager creates the IRP.
 
-for direct i/o, when the i/o manager creates the IRP it locks the user buffer into memory by calling MmProbeAndLockPages. the i/o manager stores a description of the memory in the form of a memory descriptor list (MDL). its address is then stored in the MdlAddress member of the IRP structure. once the IRP is complete, the i/o manager unlocks the buffer via MmUnlockPages.\
+for direct i/o, when the i/o manager creates the IRP it locks the user buffer into memory by calling MmProbeAndLockPages. the i/o manager stores a description of the memory in the form of a memory descriptor list (MDL). its address is then stored in the MdlAddress member of the IRP structure. once the IRP is complete, the i/o manager unlocks the buffer via MmUnlockPages.  
 if a driver must access the contents of a buffer, it can map the buffer into the system's address space using MmGetSystemAddressForMdlSafe, passing in the provided MDL.
-> wait.. locking it into memory doesn't map it into the system's address space? what does the MDL even represent then?\
-> i guess i don't understand what it means to map memory, especially when it comes to kernel-mode. shouldn't kernel-mode have direct access to the memory? why can't i just write int someValue = *(int*)0xffffff0000000000?\
-> i kind of understand why the above is ridiculous, like maybe RAM doesn't have addresses, addresses only exist as part of an OS's memory manager, so to get a valid address we have to describe the memory in the RAM format (is this what the MDL does?) and then ask the memory manager for the address via MmGetSystemAddressForMdlSafe.\
+> wait.. locking it into memory doesn't map it into the system's address space? what does the MDL even represent then?  
+> i guess i don't understand what it means to map memory, especially when it comes to kernel-mode. shouldn't kernel-mode have direct access to the memory? why can't i just write int someValue = *(int*)0xffffff0000000000?  
+> i kind of understand why the above is ridiculous, like maybe RAM doesn't have addresses, addresses only exist as part of an OS's memory manager, so to get a valid address we have to describe the memory in the RAM format (is this what the MDL does?) and then ask the memory manager for the address via MmGetSystemAddressForMdlSafe.  
 > still, though, if we can know an address is valid beforehand, can we access it without MmGetSystemAddressForMdlSafe? probably, right?
 	
 drivers that don't specify direct i/o or buffered i/o must take care to ensure buffer addresses are valid *and don't reference kernel-mode memory*, failure to do so can result in vulnerabilities where usermode applications can inject code into the kernel.
-> i think this is what people look for when identifying vulnerable drivers that they can use to load their cheat driver (or shellcode).\
+> i think this is what people look for when identifying vulnerable drivers that they can use to load their cheat driver (or shellcode).  
 > there's probably some static kernel address that holds a known value, and a usermode program passes this address to the potential vuln driver and sees if it returns the value. or something like that.
 	
 drivers must synchronize access to globals and hardware registers
 > because it can be preempted, and because its code can execute simultaneously on more than one processor
 
-such synchronization is provided via a special object: the spinlock.\
-allocating KSPIN_LOCK struct in the device extension then KeInitializeSpinLock.\
-KeAcquireSpinLock, KeReleaseSpinLock for accessing the global / hardware register.\
+such synchronization is provided via a special object: the spinlock.  
+allocating KSPIN_LOCK struct in the device extension then KeInitializeSpinLock.  
+KeAcquireSpinLock, KeReleaseSpinLock for accessing the global / hardware register.  
 IRQL should be raised to the highest IRQL the driver can reach before acquiring the spinlock.
 
-ohhh, interesting. syncing between any function and the driver's ISR is different.\
+ohhh, interesting. syncing between any function and the driver's ISR is different.  
 every interrupt object (KINTERRUPT) holds a spinlock, which is acquired before the ISR is called.
 > this implies the same ISR cannot run concurrently on other CPUs - this is the part i found interesting
 
@@ -400,8 +402,8 @@ thread-agnostic i/o can be accomplished via i/o completion ports (via winapi cal
 i/o cancellation is important. not handling a cancellation can result in unkillable processes. drivers call IoSetCancelRoutine.
 
 i/o completion ports are really interesting, the example given is for a high-performance server application that must handle a lot of network operations. basically, i/o completion ports provide asynchronicity AND concurrency, which allows for optimal thread usage. 
-> probably not relevant, but i could see an anticheat using them to throw people off.\
-> relevant kernel stuff: KeInitializeQueue, KeInsertQueue, KeRemoveQueueEx, IoRemoveIoCompletion, the KTHREAD's queue pointer (if not null).\
+> probably not relevant, but i could see an anticheat using them to throw people off.  
+> relevant kernel stuff: KeInitializeQueue, KeInsertQueue, KeRemoveQueueEx, IoRemoveIoCompletion, the KTHREAD's queue pointer (if not null).  
 > NtCreateIoCompletion, NtSetInformationFile w/ FileCompletionInformation class, NtSetIoCompletion, NtSetInformationFile.
 	
 i/o prioritization is a huge thing but ultimately not relevant to our interests (happy to be proven wrong, though).
@@ -413,20 +415,20 @@ driver verifier is a thing, it might be useful for development. i mean it is mea
 
 ## DRIVER LOADING ##
 the HKLM\System\CurrentControlSet\Services registry key contains some key parts.
-mainly, the Start value of a driver indicates when it starts, and this can be:
+mainly, the Start value of a driver indicates when it starts, and this can be:  
 * 0 \- boot-start (loaded by the boot loader)
 	> #0: by the boot loader! that's crazy. absolutely crazy to think about.
 * 1 \- system-start (loaded after the executive is initialized)
 * 2 & 3 \- loaded by the service control manager or on demand
 * 4 \- not loaded, disabled.
 
-the I/O manager loads the driver into the kernel and controls the execution. always.\
-the i/o manager executes GSDriverEntry when it loads the driver. GSDriverEntry sets up the stack cookie to protect against overflow and probably does some other initialization stuff.\
+the I/O manager loads the driver into the kernel and controls the execution. always.  
+the i/o manager executes GSDriverEntry when it loads the driver. GSDriverEntry sets up the stack cookie to protect against overflow and probably does some other initialization stuff.  
 GSDriverEntry then calls DriverEntry, which is our entrypoint.
-> it's still unclear whether the i/o manager is the one that fills in system data structures and other necessary global initialization work or if it's the GSDriverEntry function that does it before calling DriverEntry. need to look into this more.\
+> it's still unclear whether the i/o manager is the one that fills in system data structures and other necessary global initialization work or if it's the GSDriverEntry function that does it before calling DriverEntry. need to look into this more.  
 > are there other (microsoft-approved) ways to load a non-PnP software-only driver image into the kernel w/out using services?
 
-windows 7 (probably still applicable in windows 10):\
+windows 7 (probably still applicable in windows 10):  
 when service manager starts a service of type kernel_driver, it calls ScLoadDeviceDriver which then calls NtLoadDriver
 
 ## GENERAL DRIVER INFO ##
@@ -440,23 +442,23 @@ the memory manager is the largest component of the executive, and no part of the
 KeBalanceSetManager calls MmWorkingSetManager once per second or when free memory falls below a threshold. MmWorkingSetManager performs trimming, aging, and modified page writing(?).
 
 the hardware memory unit translates virtual to physical addresses at the granularity of a page, therefore a page is the smallest unit of protection at the hardware level
-> in what cases does the hardware translate virtual -> physical instead of the kernel?\
-> why are there two things capable of translation? isn't this inefficient? what problem does this solve? what's the future of this look like?\
-> how does the hardware keep its translation maps? is it populated by the kernel?\
+> in what cases does the hardware translate virtual -> physical instead of the kernel?  
+> why are there two things capable of translation? isn't this inefficient? what problem does this solve? what's the future of this look like?  
+> how does the hardware keep its translation maps? is it populated by the kernel?  
 > does the hardware actually have a role in protection or is this referring to microsoft's page protection levels?
 	
 most desktop processors support two page sizes: small and large. for x64 processors, the small page size is 4 KB and the large page size is 2 MB.
 
-large pages are always non-pageable (resident in physical memory) and contiguous.\
-Hal.dll and Ntoskrnl.exe are mapped with large pages, as well as some core data structures (unclear which).\
+large pages are always non-pageable (resident in physical memory) and contiguous.  
+Hal.dll and Ntoskrnl.exe are mapped with large pages, as well as some core data structures (unclear which).  
 each page is mapped w/ a single protection which covers the whole range.
 > MSDN says if a large page is mapped via usermode VirtualAlloc then the protection is always read/write (minimum, i assume)
 
 book mentions "huge pages" which are 1 GB in size, created automatically when requesting a large page > 1GB.
-> are huge pages actually real? not finding anything on msdn about them, and some bitcoin / chess software seems to think it's a linux-only feature.\
+> are huge pages actually real? not finding anything on msdn about them, and some bitcoin / chess software seems to think it's a linux-only feature.  
 > if they are real, does that mean there can be a 1 GB, contiguous, always-resident, single-protected range of physical memory? that's wild.
 
-the memory manager requires synchronization objects to be used for the following system-structures:
+the memory manager requires synchronization objects to be used for the following system-structures:  
 1. dynamically allocated portions of system virtual address space
 2. system working sets
 	> okay, what are working sets? i keep seeing it used in contexts that don't match my understanding of it
@@ -468,18 +470,18 @@ the memory manager requires synchronization objects to be used for the following
 7. ASLR structures
 8. each entry in the page frame number (PFN) database
 
-additionally, per-process structures that require synchronization objects (both use pushlocks):
+additionally, per-process structures that require synchronization objects (both use pushlocks):  
 1. working set lock
 2. address space lock - held whenever the address space is being changed
 
-ring3 processes virtual committed pages are also referred to as private pages.\
+ring3 processes virtual committed pages are also referred to as private pages.  
 might be useful if 'private page' is mentioned anywhere.
 
 Read/WriteProcessMemory violates the 'private' nature by running kernel-mode code in the context of the target process. Interesting.
 > so i guess looking at how these functions work can be a good starting point for figuring out kernel<->user communication w/out DeviceIoControl
 
-drivers can call MmProbeAndLockPages, MmLockPagableCodeSection, MmLockPagableDataSection, or MmLockPagableSectionByHandle.\
-The last three enforce no quota on the number of pages that can be locked.\
+drivers can call MmProbeAndLockPages, MmLockPagableCodeSection, MmLockPagableDataSection, or MmLockPagableSectionByHandle.  
+The last three enforce no quota on the number of pages that can be locked.  
 The first requires quota charges to be obtained (?).
 
 64KB allocation granularity is used by the memory manager to allocate metadata (VADs, bitmaps(?), TEBs) necessary for various process operations.
@@ -490,14 +492,14 @@ code sections and unmodified data pages are shared among processes that load the
 
 exe's and dll's are mapped as execute-only and writable pages are mapped as copy-on-write.
 
-the primitives that the memory manager uses to implement shared memory are called section objects.\
-the primitive section object is used to map virtual addresses, whether it's in physical memory, in a page file, or some other file on the filesystem.\
+the primitives that the memory manager uses to implement shared memory are called section objects.  
+the primitive section object is used to map virtual addresses, whether it's in physical memory, in a page file, or some other file on the filesystem.  
 a section can be opened by one process OR many.
 > the existence of a section object doesn't necessarily mean memory is being shared across processes.
 
-section objects are created w/ the CreateFileMapping, CreateFileMappingFromApp, or CreateFileMappingNuma(Ex) winapi functions. you specify an open file handle or NULL for a page-file-backed section.\
-if a section object is given a name it can be opened by other processes via OpenFileMapping or the CreateFileMapping* functions. handle inheritance is also another way sections can be shared.\
-drivers interact w/ sections via ZwOpenSection, ZwMapViewOfSection, and ZwUmapViewOfSection.\
+section objects are created w/ the CreateFileMapping, CreateFileMappingFromApp, or CreateFileMappingNuma(Ex) winapi functions. you specify an open file handle or NULL for a page-file-backed section.  
+if a section object is given a name it can be opened by other processes via OpenFileMapping or the CreateFileMapping* functions. handle inheritance is also another way sections can be shared.  
+drivers interact w/ sections via ZwOpenSection, ZwMapViewOfSection, and ZwUmapViewOfSection.  
 section objects can be much larger than the address space of a process, so you can map only a portion of it (the portion is referred to as a 'view' of the section) by calling MapViewOfFile.
 
 the image loader uses sections to map exe's, dll's, and drivers into memory.
@@ -508,30 +510,30 @@ the book says the processor provides hardware protection of pages. also says tha
 > i don't really understand how hardware can implement such things at all. it's just an electrified rock, what does it know of address spaces and protections?
 	
 copy-on-write sections will create a new private page whenever a process writes to it; the private page is only linked to the process that did the writing, any process that had a view of the page before the write won't see the changes. copy-on-write is to conserve physical memory.
-> this is probably how hooking ntdll.dll doesn't hook it for every process on the system? guessing the memory manager will always make an image copy-on-write even if not explicitly requested via VirtualProtect. need to verify that though.\
+> this is probably how hooking ntdll.dll doesn't hook it for every process on the system? guessing the memory manager will always make an image copy-on-write even if not explicitly requested via VirtualProtect. need to verify that though.  
 > yep, if a code page is part of a mapped section, changing its protection to PAGE_EXECUTE_READWRITE will cause the memory manager to create a private copy of the page.
 
-page faults cannot be resolved at DPC / dispatch level or above, so if running at DPC level or above every code that's executed and every data that's accessed must be in non-paged pool.\
-the system-wide paged pool is accessible from any process context, but *not* at any IRQL (by drivers, of course).\
+page faults cannot be resolved at DPC / dispatch level or above, so if running at DPC level or above every code that's executed and every data that's accessed must be in non-paged pool.  
+the system-wide paged pool is accessible from any process context, but *not* at any IRQL (by drivers, of course).  
 both the non-paged and paged system pools are interacted with via ExAllocatePool and ExFreePool.
 
 windows provides look-aside lists as a faster memory allocation mechanism that doesn't use spinlocks - the drawback is that they are always fixed-sized blocks.
 
 ## HEAP MANAGER ##
-the heap manager was invented to optimize small allocations - the granularity that the heap manager operates with is 16 bytes on x64.\
-the heap manager will grow/shrink heaps automatically.\
+the heap manager was invented to optimize small allocations - the granularity that the heap manager operates with is 16 bytes on x64.  
+the heap manager will grow/shrink heaps automatically.  
 its native interfaces are prefixed with Rtl.
 > i've seen these functions used a lot in kernel cheats.
 
-a process always starts w/ a default process heap which is initially sized to 1 MB (can be configured).\
-an array of all heaps is kept in each process, retrieved via GetProcessHeaps().\
+a process always starts w/ a default process heap which is initially sized to 1 MB (can be configured).  
+an array of all heaps is kept in each process, retrieved via GetProcessHeaps().  
 there are two types of heaps: the NT heap (with an optional front-end layer called the low-fragmentation heap) and the segment heap.
 > the segment heap is used by UWP apps and some system processes, while NT heap is used for everything else.
 
 the low-fragmentation heap (LFH) is enabled automatically by the core heap manager when it detects certain conditions where the LFH usually improves performance. once LFH is enabled for a specific heap it cannot be disabled.
 the LFH assigns threads to slots through its affinity manager component.
 
-the heap manager has a lot of built-in security mechanisms to mitigate heap-based exploits. the metadata of the heaps are packed with a high level of randomization. the header of the metadata is also subject to an integrity-check. heap also uses randomization on the base address or handle.\
+the heap manager has a lot of built-in security mechanisms to mitigate heap-based exploits. the metadata of the heaps are packed with a high level of randomization. the header of the metadata is also subject to an integrity-check. heap also uses randomization on the base address or handle.  
 additionally, segment heaps have node validation on its linked list operations and its red-black tree operations. they also use guard pages to detect overflows. furthermore, the callbacks available via segment heaps are xor-encrypted so they can't be overwritten.
 > i understand none of this, but it seems like it might be important down the road (waaaay down the road).
 
@@ -540,12 +542,12 @@ the fault tolerant heap (FTH) is a two-part compatibility service. the first par
 
 ## ADDRESS SPACES AND ASLR ##
 
-each process has its own set of page tables; pages tables are what define a virtual address space and provide the translations.\
+each process has its own set of page tables; pages tables are what define a virtual address space and provide the translations.  
 the process's page tables are kept in kernel-mode-only accessible pages so user-mode threads can't modify their own address space.
 
 session space is a thing. sessions as in userlogon sessions. it occupies its own space in the kernel and is mapped to each process's space.
 
-system space is the global space visible to kernel code existing in the context of any process / thread, it contains:
+system space is the global space visible to kernel code existing in the context of any process / thread, it contains:  
 * the OS image, HAL, and drivers used to boot the system
 * nonpaged pool
 * paged pool
@@ -559,15 +561,15 @@ system space is the global space visible to kernel code existing in the context 
 * crash dump information
 * HAL usage (memory reserved for HAL-specific structures)
 	
-64-bit windows supports 16 exabytes of memory, but current CPUs only implement 48 address lines (dunno what lines are but the result is that only 48 bits of the 64-bit space is used). the OS then divides this 48-bit space (256 TB total) into two: the lower 128 TB for private user processes and upper 128 TB for system space. virtual addresses are still 64-bits wide both in registers and in memory, so a rule was implemented that the high-order 16 bits (48 through 63) must be set to the same value as the highest-order implemented bit (bit 47). conforming to this rule results in a 'canonical address'.\
-given that rule, the canonical range of addresses for a private user process is 0x0 through 0x00007FFFFFFFFFFF.\
+64-bit windows supports 16 exabytes of memory, but current CPUs only implement 48 address lines (dunno what lines are but the result is that only 48 bits of the 64-bit space is used). the OS then divides this 48-bit space (256 TB total) into two: the lower 128 TB for private user processes and upper 128 TB for system space. virtual addresses are still 64-bits wide both in registers and in memory, so a rule was implemented that the high-order 16 bits (48 through 63) must be set to the same value as the highest-order implemented bit (bit 47). conforming to this rule results in a 'canonical address'.  
+given that rule, the canonical range of addresses for a private user process is 0x0 through 0x00007FFFFFFFFFFF.  
 and, for system space addresses, it's 0xFFFF800000000000 through 0xFFFFFFFFFFFFFFFF.
 
 
 system space is under the effect of ASLR.
 
-ASLR seems pointless. i truly don't understand how it effects anything at all. is it just not being used in the gaming industry? i've never seen a game where base+offset won't work every time.\
-okay, stack ASLR is definitely in effect in every program.\
+ASLR seems pointless. i truly don't understand how it effects anything at all. is it just not being used in the gaming industry? i've never seen a game where base+offset won't work every time.  
+okay, stack ASLR is definitely in effect in every program.  
 kernel ASLR is used for most system structures, such as paged and non-paged pools, system cache, page tables, and the PFN database.
 
 ## ADDRESS TRANSLATION ##
@@ -576,7 +578,7 @@ kernel ASLR is used for most system structures, such as paged and non-paged pool
 each page of virtual address space is associated with a system-space structure called a page table entry (PTE), which contains the physical address to which the virtual one is mapped. there may not be PTEs for regions that have been reserved or committed but never accessed - it may be that the page table is only created when the first page fault occurs.
 
 kernel-mode code cannot access physical memory directly either, but can create a virtual address mapped to it via MDLs.
-> so are 'addresses' a concept entirely made up by the OS?\
+> so are 'addresses' a concept entirely made up by the OS?  
 > i must be failing to make some 'connection' here.
 
 the translation process and the layout of the page tables and page directories are determined by the CPU. the OS must match these.
@@ -584,7 +586,7 @@ the translation process and the layout of the page tables and page directories a
 the translation process starts with a single PDPT per process, stored in the KPROCESS struct, and is always in physical memory.
 > is the PDT per-process or is it just that the pointer to a global system-space PDT is per-process?
 
-the cr3 register (for x86 at least, is x64 different?) stores this value for the currently executing process.\
+the cr3 register (for x86 at least, is x64 different?) stores this value for the currently executing process.  
 when a context switch occurs on the CPU then the cr3 register must be updated to point to the new process' PDPT from its KPROCESS struct.
 
 1. an index into the PDPT gets you a page directory pointer entry (PDPE), which points to the physical address of a page directory.
@@ -592,65 +594,65 @@ when a context switch occurs on the CPU then the cr3 register must be updated to
 3. a page table (PT) also contains 512 entries. an index into this gets you a page table entry (PTE) which points to the physical address of the start of the page.
 4. the virtual address offset (lower 12 bits on x86) is then added to the PTE pointed-to address to get the final physical address.
 
-every entry in the various table structures is also known as a page frame number (PFN) because it points to a page-aligned address.\
-each entry is 64-bits but only 36 bits are used. one of the extra bits is absolutely critical: the valid bit.\
-the valid bit indicates whether the PFN data is valid and therefore whether the CPU should continue its translation process.\
+every entry in the various table structures is also known as a page frame number (PFN) because it points to a page-aligned address.  
+each entry is 64-bits but only 36 bits are used. one of the extra bits is absolutely critical: the valid bit.  
+the valid bit indicates whether the PFN data is valid and therefore whether the CPU should continue its translation process.  
 if the valid bit is clear, then a page fault is generated and sent to the OS.
 
-each process has its own PDPT, page directories, and page tables to map that process' private address space.\
-the page directories and page tables that describe system space are shared among all processes.\
+each process has its own PDPT, page directories, and page tables to map that process' private address space.  
+the page directories and page tables that describe system space are shared among all processes.  
 to avoid having multiple page tables describing the same system space, the page directory entries that describe system space are initialized to point to the existing system page tables when a process is created. session space is a thing too.
 > what does this actually look like? is it just a struct of pointers? or just one single pointer to the "system PDPT"? is there even a single "system PDPT"?
 
-each PDE points to a PT. A PT is a simple array of PTEs. so is a PDPT. every PT has 512 PTEs and each PTE maps a single P (4kb).\
+each PDE points to a PT. A PT is a simple array of PTEs. so is a PDPT. every PT has 512 PTEs and each PTE maps a single P (4kb).  
 a PD also has 512 entires, each pointing to a PT, so a single PD maps 1 GB of address space.
 > this is all x86 OS btw. x64 changes this a bit.
 	
 for large pages (2 MB page size), the PDE points with 11 bits to the start of a large page in physical memory, the byte offset is taken for the low 21 bits of the original VA. a PDE mapping a large page does not point to a PT.
-> i don't get how the bits are encoded here, but i don't think it's terribly important. easy enough to look at in practice if need be.\
+> i don't get how the bits are encoded here, but i don't think it's terribly important. easy enough to look at in practice if need be.  
 > the takeaway is that a large page doesn't have a PT, just a PDE.
 	
-the layout of a PD and PT is essentially the same.\
+the layout of a PD and PT is essentially the same.  
 valid PTEs have two main fields: the PFN of the physical page (containing the data? what does this mean?) or of the physical address of a page in memory.
-> i have no idea what they're trying to tell me. a PFN of the physical page containing the data... or the physical address of a page..\
+> i have no idea what they're trying to tell me. a PFN of the physical page containing the data... or the physical address of a page..  
 > wouldn't they be the same thing?
 
 and a bunch of flags that describe the state and protection of the page.
 
-ah, interesting, the PTE is defined by the hardware and implemented by the OS.\
-part of the hardware specification of the PTE is the dirty bit and the accessed bit. set by the hardware, cleared by the OS. never cleared by hardware.\
+ah, interesting, the PTE is defined by the hardware and implemented by the OS.  
+part of the hardware specification of the PTE is the dirty bit and the accessed bit. set by the hardware, cleared by the OS. never cleared by hardware.  
 hardware also checks the write bit to implement page protection. if the write bit isn't set and a write operation comes in, it'll generate an exception for the OS memory manager to handle.
 
-ah, there are two write bits: one hardware, one software.\
+ah, there are two write bits: one hardware, one software.  
 there's some weird deadlock issue with writing and the dirty bit, so the memory manager initializes pages w/ the hardware write bit set to 0 and the software write bit is the 'true' value. on the first write, an exception occurs, the memory manager acquires a pushlock, does stuff, sets the dirty bit and the hardware write bit. now that the hardware write bit is set, subsequent writes won't generate this exception.
 > i don't really get it, but i think the takeaway is that the software write bit is the important one, and also the dirty bit might need further research.
 	
 ## TRANSLATION LOOKASIDE BUFFER ##
-(TLB)\
+(TLB)  
 since translating a virtual address to a physical address requires 3 lookups, the CPU hardware keeps a cache of address translations. this cache is called the translation lookaside buffer (TLB). the cache contains the portion of the virtual address, along with the physical page number, protection field, valid bit, and usually a dirty bit. also a global bit? if the PTE's global bit is set then the TLB entry isn't invalidated on context switches.
-> what does it mean 'usually' a dirty bit?\
-> is the global bit also kept in the cache?\
+> what does it mean 'usually' a dirty bit?  
+> is the global bit also kept in the cache?  
 > is it basically just the entire PTE struct? it seems like it should basically be the entire PTE struct, especially since it's defined by the hardware manufacturer anyway.
 	
 
 ## x64 ADDRESS TRANSLATION ##
-(adds on to x86 translations above)\
-each process has a top-level extended page directory called the page map level 4 table (PML4).\
-each PML4 table contains the physical locations of 512 page directory pointers (PDPs?).\
+(adds on to x86 translations above)  
+each process has a top-level extended page directory called the page map level 4 table (PML4).  
+each PML4 table contains the physical locations of 512 page directory pointers (PDPs?).  
 the page parent directory is analagous to x86's PDPT.
 > what's the page parent directory? where did the 'parent' word come from? is this per-process still?
 
-each page parent directory contains 512 entries instead of just 4.\
-the page parent directory's entries contain the physical locations of second-level page directories (PDs?).\
-each page directory contains 512 entries providing the physical locations of the individual page tables (PTs?).\
-lastly, each page table contains 512 page table entries which provide the physical locations of the pages in memory.\
+each page parent directory contains 512 entries instead of just 4.  
+the page parent directory's entries contain the physical locations of second-level page directories (PDs?).  
+each page directory contains 512 entries providing the physical locations of the individual page tables (PTs?).  
+lastly, each page table contains 512 page table entries which provide the physical locations of the pages in memory.  
 all "physical locations" are stored as PFNs.
 
-okay this actually makes more sense to me than the x86 description.\
-a virtual address's high 9 bits index into its PML4 table (one per KPROCESS).\
-then the next 9 bits index into the array of page directory pointers (PDP), whose start address we got from the PML4 entry.\
-then the next 9 bits index into the page directory..\
-then the next 9 bits index into the page table...\
+okay this actually makes more sense to me than the x86 description.  
+a virtual address's high 9 bits index into its PML4 table (one per KPROCESS).  
+then the next 9 bits index into the array of page directory pointers (PDP), whose start address we got from the PML4 entry.  
+then the next 9 bits index into the page directory..  
+then the next 9 bits index into the page table...  
 and the final 12 bits correspond to the byte within that page.
 > wait no, the final 12 bits might be the flags. don't know. everything else makes sense though.
 
@@ -658,26 +660,26 @@ and the final 12 bits correspond to the byte within that page.
 ## PAGE FAULT HANDLING ##
 the kernel trap handler passes page faults to MmAccessFault, in the context of the thread that incurred the fault.
 
-if the valid bit of a PTE is zero, the PTE will raise an exception and the MMU will ignore the remaining bits which allows the OS to use those bits to store information necessary to resolve the fault.\
-such PTEs are referred to as software PTEs because they are processed by the OS rather than the MMU.\
-the formats of these software PTEs vary depending on what it's meant to resolve.\
-some formats:
+if the valid bit of a PTE is zero, the PTE will raise an exception and the MMU will ignore the remaining bits which allows the OS to use those bits to store information necessary to resolve the fault.  
+such PTEs are referred to as software PTEs because they are processed by the OS rather than the MMU.  
+the formats of these software PTEs vary depending on what it's meant to resolve.  
+some formats:  
 * Page file
 * Demand-zero
 * Virtual address descriptor (VAD)
 * Transition
 * Unknown
 	
-for sharing pages between two processes, a special structure exists called the prototype PTE.\
-for page-file backed sections, an array of prototype PTEs is created when a section object is first created.\
-for mapped files, portions of this array are created on demand as each view is mapped.\
-when a process first references a page mapped to a view of a section object (VADs are created only when the view is mapped), the memory manager uses the prototype PTE to fill in the real PTE used for address translation in the process page table.\
+for sharing pages between two processes, a special structure exists called the prototype PTE.  
+for page-file backed sections, an array of prototype PTEs is created when a section object is first created.  
+for mapped files, portions of this array are created on demand as each view is mapped.  
+when a process first references a page mapped to a view of a section object (VADs are created only when the view is mapped), the memory manager uses the prototype PTE to fill in the real PTE used for address translation in the process page table.  
 when a shared page is made valid, both the process PTE and prototype PTE point to the physical page containing the data.
 > the process PTE is only updated once that process accesses the page - until then, it remains pointing to the prototype PTE.
 
-to track the number of process PTEs that reference a valid shared page, a counter in its PFN database entry is incremented, allowing the memory manager to determine when a shared page is no longer referenced by any PT and thus can be made invalid and moved to a transition list or written to disk.\
-when the shareable page is invalidated, the PTE in the process page table is filled in with a(nother) special PTE that points to the prototype PTE, allowing the memory manager to locate the prototype PTE which in turn describes the actual page being referenced.\
-a shared page can be in one of six states, described by the prototype PTE:
+to track the number of process PTEs that reference a valid shared page, a counter in its PFN database entry is incremented, allowing the memory manager to determine when a shared page is no longer referenced by any PT and thus can be made invalid and moved to a transition list or written to disk.  
+when the shareable page is invalidated, the PTE in the process page table is filled in with a(nother) special PTE that points to the prototype PTE, allowing the memory manager to locate the prototype PTE which in turn describes the actual page being referenced.  
+a shared page can be in one of six states, described by the prototype PTE:  
 1. Active/valid - it's in physical memory because another process accessed it
 	> what? what if it's in physical memory because this process accessed it?
 2. Transition - in memory but on the standby or modified list (or not on any list)
@@ -691,15 +693,15 @@ a shared page can be in one of six states, described by the prototype PTE:
 		
 prototype PTEs are a layer between the page table and the PFN database, they never appear directly in page tables.
 	
-in-paging I/O occurs when a read operation must be issued to a file (paging or mapped) to satisfy a page fault.\
-because page tables themselves are pageable, there may be additional overhead.\
-the in-page I/O is synchronous and isn't interruptible by APC delivery. the pager uses a special modifier in the I/O request function to indicate this special paging I/O.\
+in-paging I/O occurs when a read operation must be issued to a file (paging or mapped) to satisfy a page fault.  
+because page tables themselves are pageable, there may be additional overhead.  
+the in-page I/O is synchronous and isn't interruptible by APC delivery. the pager uses a special modifier in the I/O request function to indicate this special paging I/O.  
 upon completion, the I/O system triggers an event, which wakes up the pager and allows it to continue in-page processing.
-> i don't know what in-page processing refers to. does the pager do some kind of constant processing? seems like the pager is something that would only respond to page faults, and not have anything else to do otherwise.\
+> i don't know what in-page processing refers to. does the pager do some kind of constant processing? seems like the pager is something that would only respond to page faults, and not have anything else to do otherwise.  
 > will probably feel like an absolute fool when i look into this a bit.
 	
-while the paging I/O operation is in progress, the faulting thread doesn't own any critical memory management synchronization objects.\
-other threads within the process can issue virtual memory functions and handle page faults while the paging I/O takes place, which leads to some conditions the pager must recognize:
+while the paging I/O operation is in progress, the faulting thread doesn't own any critical memory management synchronization objects.  
+other threads within the process can issue virtual memory functions and handle page faults while the paging I/O takes place, which leads to some conditions the pager must recognize:  
 1. another thread could have faulted the same page (called a collided page fault)
 2. page could have been deleted and remapped
 	> so the owning process deleted it and a different process then maps it into its address space?
@@ -710,9 +712,9 @@ other threads within the process can issue virtual memory functions and handle p
 
 the pager handles these conditions by saving enough state on the thread's kernel stack.
 
-collided page faults are handled by the pager recognizing that the page is in transition and a read is in progress (this info is stored in the PFN database entry).\
-apparently the event the paging I/O uses is also stored in the PFN databse entry, because it can issue a wait operation on that event.\
-it can also use parallel I/O (first one wins, rest discarded) to avoid filesystem deadlocks.\
+collided page faults are handled by the pager recognizing that the page is in transition and a read is in progress (this info is stored in the PFN database entry).  
+apparently the event the paging I/O uses is also stored in the PFN databse entry, because it can issue a wait operation on that event.  
+it can also use parallel I/O (first one wins, rest discarded) to avoid filesystem deadlocks.  
 when the I/O completes, the first thread to acquire the PFN database lock is responsible for performing the completion operations. checking that the I/O was completed successful, clearing the read-in-progress bit in the PFN database, and updating the PTE.
 
 clustered page faults... i don't get. it has something to do with prefetching large clusters. there's a single system-wide dummy page that can be filled with stale data from the prefetched pages whenever an MDL requests it. doesn't make much sense to me, and i don't see its relevance.
@@ -722,7 +724,7 @@ clustered page faults... i don't get. it has something to do with prefetching la
 page files store modified pages that are still in use by some process, but have had to be written to disk because they were unmapped or memory pressure resulted in a trim
 > i must be having some serious brain fog. how can a page be unmapped and still belong to the process?
 	
-the session manager looks at registry HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\MemoryManagement\PagingFiles.\
+the session manager looks at registry HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\MemoryManagement\PagingFiles.  
 this registry value contains the name, minimum size, and maximum size of each paging file. x86 and x64 support up to 16 paging files. the System process maintains an open handle to each page file.
 > maybe this means we could access paged memory directly by borrowing those handles?
 
@@ -734,13 +736,13 @@ a swap file is a paging file but specifically for UWP apps.
 a virtual page file exists that's used as the backing store for memory compression. it is not an actual file on disk.
 
 ## COMMIT CHARGE ##
-whenever address space is created (eg; VirtualAlloc w/ commit, or MapViewOfFile) the system must ensure there's room to store it before completing the request.\
-for mapped memory, the file associated by the MapViewOfFile call provides the backing store.\
-all other virtual allocations rely on the system-managed shared resources (RAM and the paging files).\
+whenever address space is created (eg; VirtualAlloc w/ commit, or MapViewOfFile) the system must ensure there's room to store it before completing the request.  
+for mapped memory, the file associated by the MapViewOfFile call provides the backing store.  
+all other virtual allocations rely on the system-managed shared resources (RAM and the paging files).  
 therefore, the commit limit and commit charge is to track all usages of these resources so they are never overcommitted.
 
-commit charge is the system-wide total of all committed memory allocations that must be kept in RAM or paging files.\
-some non-obvious cases of commit charge:
+commit charge is the system-wide total of all committed memory allocations that must be kept in RAM or paging files.  
+some non-obvious cases of commit charge:  
 1. non-paged and paged pool and other allocations in system-space contribute to the charge, even free regions of the system memory pools.
 2. kernel stacks
 3. page tables
@@ -749,48 +751,48 @@ some non-obvious cases of commit charge:
 6. copy-on-write regions of mapped memory (because if it's modified it has to be copied to a new page)
 
 ## DPC Stacks ##
-DPC stacks are a thing - they isolate DPC code from the current thread's kernel stack.\
-they're also configured to be the initial stack for syscall / sysenter operations.\
-the CPU is responsible for switching the stack when those instructions are executed, based on one of the model-specific registers (MSRs).\
+DPC stacks are a thing - they isolate DPC code from the current thread's kernel stack.  
+they're also configured to be the initial stack for syscall / sysenter operations.  
+the CPU is responsible for switching the stack when those instructions are executed, based on one of the model-specific registers (MSRs).  
 windows configures the per-processor DPC stack pointer in the MSR.
 > this seems exploitable
 
 ## VIRTUAL ADDRESS DESCRIPTORS ##
-(VADs)\
-the memory manager uses lazy initialization not only to bring pages into memory but also to construct the page tables required to describe new pages.\
+(VADs)  
+the memory manager uses lazy initialization not only to bring pages into memory but also to construct the page tables required to describe new pages.  
 in the example above where a process commits a large region of memory via VirtualAlloc but never accesses it, it would be inefficient to create the page tables to describe the region if it's never accessed, so the memory manager waits until a page fault occurs, then creates the page table for the faulted page.
 
-of course, the call to VirtualAlloc must still return a range of addresses to use, so that's where the VAD structures come in.\
-VADs keep track of which virtual addresses have been reserved in the process' address space and which have not.\
+of course, the call to VirtualAlloc must still return a range of addresses to use, so that's where the VAD structures come in.  
+VADs keep track of which virtual addresses have been reserved in the process' address space and which have not.  
 VADs are allocated in non-paged pool.
 
-Process VADs are organized into a self-balancing AVL tree.\
-there is one VAD for each virtually contiguous range of not-free virtual addresses that all have the same characteristics (reserved/committed/mapped, protection, etc).\
+Process VADs are organized into a self-balancing AVL tree.  
+there is one VAD for each virtually contiguous range of not-free virtual addresses that all have the same characteristics (reserved/committed/mapped, protection, etc).  
 when a thread first accesses an address, the memory manager creates a PTE for the page containing the address by finding the VAD whose address range contains the accessed address. if the address falls outside the range of a VAD or is in a range that's reserved but not committed then an access violation exception is thrown.
 
 rotate VADs are used (exclusively?) by video cards for efficient swapping in and out of process view pages.
 
 ## NUMA ##
-NUMA is a thing that exists. i think it's only for like servers and stuff.\
+NUMA is a thing that exists. i think it's only for like servers and stuff.  
 Non-uniform memory architecture.
 
 ## WORKING SETS ##
 prefetching / superfetch / readyboot is awesome, but probably leaves many traces of a game cheat for an anticheat to detect.
 
-the memory manager's trim routine checks the accessed bit in the hardware PTE to determine if a page has been accessed since the last trim scan.\
+the memory manager's trim routine checks the accessed bit in the hardware PTE to determine if a page has been accessed since the last trim scan.  
 if a page with the accessed bit set is encountered, the memory manager clears it before continuing its search.
-> could we always set this bit to force a page to be kept resident?\
+> could we always set this bit to force a page to be kept resident?  
 > there's probably better ways of doing this, anyway.
 
-working set expansion and trimming take place in the context of a system thread called the balance set manager (KeBalanceSetManager function).\
-the balance set manager waits on two event objects, one occurs every second, the other occurs when the memory manager signals that the working sets need to be adjusted.\
+working set expansion and trimming take place in the context of a system thread called the balance set manager (KeBalanceSetManager function).  
+the balance set manager waits on two event objects, one occurs every second, the other occurs when the memory manager signals that the working sets need to be adjusted.  
 > it has a whole step-by-step description of its operations, read through it if necessary.
 
 system working sets:
 1. System cache working set - contains pages that are resident in the system cache
 	> what's the system cache?
 2. paged pool working set - contains pages that are resident in the paged pool
-	> resident as in currently in physical memory, but *could* be paged to disk?\
+	> resident as in currently in physical memory, but *could* be paged to disk?  
 	> or resident *in* the pagefile? (has already been paged?)
 3. system PTEs working set - pageable code and data from loaded drivers and the kernel image, and pages from sections that have been mapped into system space.
 	
@@ -799,10 +801,10 @@ on win10, these are stored in the MiState.SystemVa.SystemWs array. [0] = system 
 > oh i think it's just statistics though, not leading to the actual consumers/producers of the data. so this entire section might be irrelevant to us.
 
 ## PAGE FRAME NUMBER DATABASE ##
-(PFN database / PFNDB)\
+(PFN database / PFNDB)  
 whereas working sets describe the resident pages owned by a process or the system, the PFN database describes the state of each page in physical memory.
 
-physical page states:
+physical page states:  
 1. Active/Valid - part of a working set (process, session, or system), or not in any working set (eg; non-paged kernel page)
 2. Transition - paging I/O is in progress
 3. Standby - previously belonged to a working set but was removed or was prefetched / clustered, page wasn't modified since last written to disk
@@ -813,7 +815,7 @@ physical page states:
 8. Rom - represents read-only memory
 9. Bad - either hardware errors or part of an enclave.
 
-the PFN database is an array of structures that represent each physical page of memory on the system.\
+the PFN database is an array of structures that represent each physical page of memory on the system.  
 valid PTEs usually point to entries in the PFN database - the PFN index points to the page in physical memory.
 > i think the 'usually' here just refers to the existence of prototype PTEs.
 
@@ -824,11 +826,11 @@ of the 9 page states above, six are organized into linked lists. active/valid pa
 
 it seems all the linked lists are still part of the contiguous PFN database array. the diagram is really confusing. what do the dots mean? why are there arrows coming out of the right side? pictures are meant to clarify, not confuse. is it meant to show that the PFN database is contiguous but the linked list entries may point to elements further down the array, so the entries of the list aren't necessarily contiguous? i think that's what it's trying to show.
 
-there's another diagram trying to show how pages transition between states. not even going to try making sense of it.\
+there's another diagram trying to show how pages transition between states. not even going to try making sense of it.  
 state transitions seem pretty intuitive though, no gotchas.
 
-the memory manager uses two system threads to write pages to disk and move those pages back to the standby lists.\
-one thread writes out modified pages to the paging file, the other thread writes modified pages to mapped files.\
+the memory manager uses two system threads to write pages to disk and move those pages back to the standby lists.  
+one thread writes out modified pages to the paging file, the other thread writes modified pages to mapped files.  
 each thread waits on a different set of event objects, and each one can be signaled under certain conditions.
 > these conditions may be relevant to kernel cheats in some very indirect way. if kernel anticheats ever start trying to detect pinning pages into residence or translating addresses then maybe we can use the events as a very low-level way to ensure a certain translation state. i dunno, i'm no expert yet.
 	
@@ -845,10 +847,10 @@ memory partitions also exist, they allow for containers like docker. containers 
 memory combining exists. if pages have identical CRC hashes they are combined.
 > this one might actually be relevant to kernel cheats. might be some tricks to take advantage of. i dunno.
 	
-memory enclaves also exist. intel created Intel Software Guard Extensions.\
-an enclave is a secure zone in a process' address space where code and data are protected from coding executing outside of the enclave by the CPU itself.\
-code running in the enclave still has full access to its entire process' address space.\
-the protection extends to other processes and even to kernel code.\
+memory enclaves also exist. intel created Intel Software Guard Extensions.  
+an enclave is a secure zone in a process' address space where code and data are protected from coding executing outside of the enclave by the CPU itself.  
+code running in the enclave still has full access to its entire process' address space.  
+the protection extends to other processes and even to kernel code.  
 an enclave can't be used in ring0, it's only for protecting ring3 address spaces.
 
 superfetch is a thing. it is always running its trace code, always. it's very similar to ETW.
@@ -856,13 +858,13 @@ superfetch is a thing. it is always running its trace code, always. it's very si
 
 # SECURITY SYSTEM #
 -------------------
-probably won't go through this section, i don't see how security is relevant at all. not at all.\
+probably won't go through this section, i don't see how security is relevant at all. not at all.  
 (to-do).
 
 	
 # MEMORY VIRTUALIZATION #
 -------------------------
-(from 6th edition, windows 7, 2012)\
+(from 6th edition, windows 7, 2012)  
 guest OS's expect physical memory to start at 0 and be mostly contiguous, so the hypervisor implements the guest physical address space (GPA) and translates to the real system physical address space (SPA). guest OS's then handle virtual memory in the same way as if it were not virtualized, creating the guest virtual address space (GVA).
 
 when the guest OS boots and creates the page tables to translate from virtual address space to physical address space, the hypervisor intercepts this and keeps a copy.
@@ -871,41 +873,41 @@ when the guest OS boots and creates the page tables to translate from virtual ad
 the operation of translating GVA -> GPA -> SPA is optimized with shadow page tables (SPTs) which have direct GVA->SPA translations.
 > are the SPTs constructed from the above interception?
 
-additionally, CPU manufacturers are also trying to optimize those translations by making the actual CPU hardware aware that a particular memory access is coming from a guest VM and perform the GVA -> SPA translation itself, without getting the hypervisor involved. this technology is called Second-Level Address Translation (SLAT) [because it covers target-to-host translation (second level) and host virtual to host physical translation (first level)].\
-Intel markets this tech feature as VT extended/nested page table (EPT / NPT).\
+additionally, CPU manufacturers are also trying to optimize those translations by making the actual CPU hardware aware that a particular memory access is coming from a guest VM and perform the GVA -> SPA translation itself, without getting the hypervisor involved. this technology is called Second-Level Address Translation (SLAT) [because it covers target-to-host translation (second level) and host virtual to host physical translation (first level)].  
+Intel markets this tech feature as VT extended/nested page table (EPT / NPT).  
 AMD markets this as amd-v rapid virtualization indexing (RVI).
 
 with this CPU support, microsoft's hyperV stack is able to do away with SPT's entirely.
 > so do SPTs not exist on win10 now? (assuming any CPU from the last 10 years is used)
 
 
-this seems tangential, but there's something about the CPU (at all times, not just for VMs) caching virtual-to-physical translation entries in a translation look-aside buffer (TLB). each time the OS switches the currently executing process, the TLB has to be flushed to invalidate the cache entries belonging to the previous process.\
-flushing the TLB is understandly worse when dealing with VMs.\
+this seems tangential, but there's something about the CPU (at all times, not just for VMs) caching virtual-to-physical translation entries in a translation look-aside buffer (TLB). each time the OS switches the currently executing process, the TLB has to be flushed to invalidate the cache entries belonging to the previous process.  
+flushing the TLB is understandly worse when dealing with VMs.  
 by letting the OS tell the processor directly that the active process has switched, the TLB can avoid flushing and simply overwrite the cache.
 > *this seems dumb*. is this what the spectre/meltdown exploits took advantage of?
 
-this is called a tagged TLB, each cache entry is tagged with a per-process ID.\
-Intel supports tagged TLBs via Virtual Process Identifier (VPID).\
+this is called a tagged TLB, each cache entry is tagged with a per-process ID.  
+Intel supports tagged TLBs via Virtual Process Identifier (VPID).  
 AMD supports tagged TLBs via Address Space Identifier (ASID).
 
 # SOURCES #
 -----------
-["Windows Internals, Part 1: System architecture, processes, threads, memory management, and more, 7th Edition" by Pavel Yosifovich, Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-1-system-architecture-processes-9780735684188)\
-["Windows Internals, Part 1, 6th Edition" by Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-1-9780735648739)\
-["Windows Internals, Part 2, 6th Edition" by Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-2-9780735665873)\
-["Windows Kernel Programming" by Pavel Yosifovich](https://leanpub.com/windowskernelprogramming)\
-[Alex Ionescu's Blog](https://www.alex-ionescu.com)\
-[Geoff Chappell](https://geoffchappell.com/index.htm) \
-[ReactOS](https://reactos.org/)\
-[Secret.club](https://secret.club/) \
-[Back-Engineering](https://back.engineering/) \
-[Intel Software Developer Manuals](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html) \
+["Windows Internals, Part 1: System architecture, processes, threads, memory management, and more, 7th Edition" by Pavel Yosifovich, Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-1-system-architecture-processes-9780735684188)  
+["Windows Internals, Part 1, 6th Edition" by Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-1-9780735648739)  
+["Windows Internals, Part 2, 6th Edition" by Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-2-9780735665873)  
+["Windows Kernel Programming" by Pavel Yosifovich](https://leanpub.com/windowskernelprogramming)  
+[Alex Ionescu's Blog](https://www.alex-ionescu.com)  
+[Geoff Chappell](https://geoffchappell.com/index.htm)   
+[ReactOS](https://reactos.org/)  
+[Secret.club](https://secret.club/)   
+[Back-Engineering](https://back.engineering/)   
+[Intel Software Developer Manuals](https://software.intel.com/content/www/us/en/develop/articles/intel-sdm.html)   
 [Unknowncheats.me](https://www.unknowncheats.me/forum/anti-cheat-bypass/?s=687afc35e4503402c67f459525bb113d)
 > note: specific forum threads should also be linked when used.
 
 [Rohitab.com](http://www.rohitab.com/discuss/)
 
-https://blahcat.github.io/2019/03/17/small-dumps-in-the-big-pool/ \
+https://blahcat.github.io/2019/03/17/small-dumps-in-the-big-pool/   
 https://www.alex-ionescu.com/?p=231
 
 
@@ -915,6 +917,7 @@ https://www.alex-ionescu.com/?p=231
 # THIS DOCUMENT #
 -----------------
 ## TO-DO ##
+
 - [] Look at how Let It Die loads its kernel anticheat & interacts with it
 - [x] Read section on memory manager from windows internals
 - [] Read 'What Makes It Page?' to learn even more about windows' memory management and processors
@@ -928,6 +931,7 @@ https://www.alex-ionescu.com/?p=231
 
 
 ## Terminology to learn about ##
+
 1. KeServiceDescriptorTable
 	> is this the SSDT? - yes it is. there is a second one: KeServiceDescriptorTableShadow ("for graphical routines"?)
 2. "Switch address spaces by writing to cr3 and flushing global pages from the TLB"
@@ -935,9 +939,9 @@ https://www.alex-ionescu.com/?p=231
 3. EPT / EPTP hooking
 	> saw someone clarify that the EPT is the same as SLAT (second-level address translation). so i think this is hypervisor-only.
 4. BigPool
-	> seems this is just part of the heap manager when allocation size is > (PAGE_SIZE - metadata_size).\
-	> Allocations that use the BigPool allocator have a slightly different POOL_ENTRY structure - the metadata exists outside of the pool itself.\
-	> The structure that holds the metadata might be the 'PoolBigPageTable' where each entry is a 'POOL_TRACKER_BIG_PAGES' [windows 8].\
+	> seems this is just part of the heap manager when allocation size is > (PAGE_SIZE - metadata_size).  
+	> Allocations that use the BigPool allocator have a slightly different POOL_ENTRY structure - the metadata exists outside of the pool itself.  
+	> The structure that holds the metadata might be the 'PoolBigPageTable' where each entry is a 'POOL_TRACKER_BIG_PAGES' [windows 8].  
 	> https://www.alex-ionescu.com/?p=231
 5. context switching
 6. 'global' and 'per-processor' data.
@@ -949,28 +953,28 @@ MmCopyVirtualMemory is equivalent to KeStackAttach + RtlCopyMemory, but with bui
 
 KiStackAttachProcess is an alternative to KeStackAttach.
 
-https://www.unknowncheats.me/forum/anti-cheat-bypass/414289-eac-scanning-pool-tags.html \
-regarding scanning bigpool:\
+https://www.unknowncheats.me/forum/anti-cheat-bypass/414289-eac-scanning-pool-tags.html   
+regarding scanning bigpool:  
 "just hide results from eac ntquerysystem bigpool class call. can do this by many way
 - hypervisor to hide hook
 - disable patchguard
 - use hypervisor to hook eac call to function then patch function
 - find eac function use to resolve kernel import(is code other thread) and change address to own function ^^
 - eac has intergrity scan function for driver, other thread user find, can use that or use hypervisor to trace back, save start of function bytes then patch with no hypervisor and patch eac any function.
-- can try remove ntosknrl!ExPoolTagTables but maybe no use for this here"\
+- can try remove ntosknrl!ExPoolTagTables but maybe no use for this here"  
 
 \- Frostiest
 		
-https://www.unknowncheats.me/forum/anti-cheat-bypass/418637-eac-processworkingsetwatch.html \
+https://www.unknowncheats.me/forum/anti-cheat-bypass/418637-eac-processworkingsetwatch.html   
 * "EAC use ntset/getinformationprocess and class ProcessWorkingSetWatch"
 * struct _PAGEFAULT_HISTORY is allocated per-process containing 1024 _PROCESS_WS_WATCH_INFORMATION  structs.
 * each _PROCESS_WS_WATCH_INFORMATION  contains info on page faults.
 * this can be used to detect memory access (even something as mundane as KeStackAttach)
 	
-https://gist.github.com/HoShiMin/779d1c5e96e50a653ca43511b7bcb69a \
+https://gist.github.com/HoShiMin/779d1c5e96e50a653ca43511b7bcb69a   
 * SymParser, for finding address of non-exported kernel functions
 
 ## Misc ##
 
-scm just uses the winapi (ControlService, CreateService, OpenService, etc).\
+scm just uses the winapi (ControlService, CreateService, OpenService, etc).  
 > no magic, just a fancy wrapper. thought this was worth noting just because it seems kind of mystical.
