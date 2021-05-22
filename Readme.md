@@ -226,12 +226,12 @@ the i/o system drives the execution of device drivers. device drivers consist of
 > this is important! drivers aren't programs that run infinitely like usermode programs might, they are (or should be) purely reactive.
 	
 the key routines of a driver are:  
+> or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?  
 1. the initialization routine: set to GSDriverEntry by the WDK. GSDriverEntry sets up the stack cookie then calls our DriverEntry, which should register the rest of its routines with the i/o manager and perform any other global initialization
 2. an add-device routine: seems to only be for plug-n-play drivers. creates the device object.
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
 4. a start i/o routine: seems to be for actual hardware device drivers? not fully sure.
 5. an interrupt service routine (ISR): only for drivers that handle interrupt-driven devices.
-	> or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
 6. an interrupt-servicing DPC routine: basically the second part of the ISR.
 7. one or more i/o completion routines: not entirely sure how these are used in practice, but seems like it might be useful? basically a callback.
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
