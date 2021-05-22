@@ -234,16 +234,16 @@ the key routines of a driver are:
 3. a set of dispatch routines: these are what must be registered in DriverEntry, they handle IRPs.
 4. a start i/o routine: seems to be for actual hardware device drivers? not fully sure.
 5. an interrupt service routine (ISR): only for drivers that handle interrupt-driven devices.
-	> #5: or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
+	> or is it? could we also register an ISR? or hijack another driver's ISR? is there any benefit to doing this?
 6. an interrupt-servicing DPC routine: basically the second part of the ISR.
 7. one or more i/o completion routines: not entirely sure how these are used in practice, but seems like it might be useful? basically a callback.
 8. a cancel i/o routine: similar to above, but for when an IRP is cancelled.
 9. fast-dispatch routines: i don't get these at all. "drivers that make use of the cache manager (??) provide these routines to allow the kernel to bypass typical i/o processing when accessing the driver. [...]. Fast dispatch routines are also used as a mechanism for callbacks from the memory manager and cache manager to file-system drivers.".
-> #9: so are they basically just for file-system drivers?
->
-> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.
->
-> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
+	> so are they basically just for file-system drivers?
+	>
+	> i guess the important takeaway is that fast-dispatch routines skip the whole IRP process and are invoked directly.
+	>
+	> i don't know what invokes them or how they're invoked or what situations would lead to them being invoked.
 10. unload routine: for cleaning up system resources, allows the i/o manager to unload the driver entirely. only invoked when all file handles to the device are closed.
 11. system shutdown notification routine: same as above, but invoked when the system is shutting down.
 12. error-logging routines: seems like something any smart dev would write. basically just DbgPrint. doesn't sound like it's something that's actually registered anywhere.
@@ -426,7 +426,7 @@ the HKLM\System\CurrentControlSet\Services registry key contains some key parts.
 mainly, the Start value of a driver indicates when it starts, and this can be:  
 
 * 0 - boot-start (loaded by the boot loader)
-	> #0: by the boot loader! that's crazy. absolutely crazy to think about.
+	> by the boot loader! that's crazy. absolutely crazy to think about.
 * 1 - system-start (loaded after the executive is initialized)
 * 2 & 3 - loaded by the service control manager or on demand
 * 4 - not loaded, disabled.
