@@ -971,6 +971,71 @@ this is called a tagged TLB, each cache entry is tagged with a per-process ID.
 Intel supports tagged TLBs via Virtual Process Identifier (VPID).  
 AMD supports tagged TLBs via Address Space Identifier (ASID).
 
+# PRACTICAL USAGE #
+-------------------  
+this section is kind of a catch-all for everything related to cheat development. common patterns & techniques used, theory-crafting, and writeups on how existing projects work.  
+
+## VULNERABLE DRIVERS ##  
+it's extremely common right now to manually map your driver into kernel space.  
+this completely bypasses the need for proper certs.
+
+the standard way this is accomplished is by finding *vulnerable*, signed drivers that allow arbitrary physical memory read/writes via usermode DeviceIoControl calls.
+> i'm sure there are other ways of executing unsigned code in the kernel (or even above the kernel) but i haven't read into it yet.
+
+i've had trouble finding a definition for what a 'vulnerable driver' exactly is or how to identify them, so some research must be done. there are lists of known vulnerable drivers, so my first step will be to download a bunch of those and see what they have in common.
+
+another good exercise is seeing how existing mappers work.
+
+## NOTE ON MAPPER PROJECTS ##  
+i'm not giving proper time to fully explore the codebases, so i'm probably missing a lot. i'm only doing a very shallow read to try to figure out the central functionality so i can draw comparisons. i'm not trying to criticize or rate these mappers at all. they're all above me currently, i'm just trying to learn from them.
+
+## PHYSMEME AND VDM PROJECTS ##  
+https://githacks.org/_xeroxz/physmeme & https://githacks.org/_xeroxz/vdm by _xeroxz aka IDontCode  
+
+they're very similar. they both scan every page in physical memory to find NtShutdownSystem, and then write an inline hook for kernel code execution.  
+
+is the MappedBase / ImageBase of the _RTL_PROCESS_MODULE_INFORMATION not the base of the module? why can't you just krnlBase + ntModuleMappedBase + funcRVA to get the address instead of scanning each physical page?  
+
+i guess because that'd still be relative to your process? or because you can't actually get the krnlBase yet. i think it's that. and you can get the relative offset of the function in the kernel via NtQuerySystemInformation w/ SYSTEM_INFORMATION_CLASS and matching module name to get the module base, then loading it via LoadLibraryEx then parsing its exports table to find the function rva.
+
+so with the ntoskrnl.exe mapped into your process via LoadLibraryEx and the NtShutdownSystem function rva, we can start making the memcmp calls when traversing the phsyical pages. 
+
+it gets the page offset from the function rva by taking the remainder of the rva divided by page_size. rva % 0x1000. this ensures the memcmp can start at the exact supposed location.
+
+it checks that it is the *actual* NtShutdownSystem by overwriting the found function with code that sets a return value (0x0 or STATUS_SUCCESS in vdm's case) and immediately returns, then calls it (as a normal usermode call) and checks for that return value.
+
+it gets ranges of physical memory via registry key HARDWARE\\RESOURCEMAP\\System Resources\\Physical Memory.
+> no idea how this registry key works, need to look into it more.
+
+the read and write to kernel memory is abstracted to whichever vulnerable driver the user wishes to use.
+
+physmeme has a utility function to clear piddb cache and clears PE header.
+
+
+## KDMAPPER PROJECT ##  
+https://github.com/z175/kdmapper by z175  
+
+quite similar to the other mappers, but this one relies specifically on an intel networking driver (iqvw64e.sys) which exposes read/write, map/unmap, and looks like a helper function for translating virtual to physical addresses.
+
+it also uses NtQuerySystemInformation w/ SYSTEM_INFORMATION_CLASS to get module bases ("win32kbase.sys" this time). it reads the headers from kernel memory instead of using LoadLibraryEx.  
+
+for execution, it overwrites a function ptr executed by NtGdiDdDDIReclaimAllocations2. 
+
+it erases the mapped driver's PE header and clears MmUnloadedDrivers of iqvw64e.sys.
+
+## KDU PROJECT ##  
+https://github.com/hfiref0x/KDU by hfiref0x
+
+i didn't read through this one much. it abstracts the vulnerable driver part like physmeme / vdm, and for execution it loads process explorer's driver and writes shellcode to its IRP_MJ_CREATE handler, calls CreateFile, then unloads both the process explorer driver and the vulnerable driver.
+
+it doesn't perform any stealth actions.
+
+## DRVMAP PROJECT ##
+https://github.com/not-wlan/drvmap by wlan  
+
+uses the capcom driver as its vulnerable driver. this driver allows read, write, AND execute via usermode DeviceIoControl calls.
+
+
 # SOURCES #
 -----------
 ["Windows Internals, Part 1: System architecture, processes, threads, memory management, and more, 7th Edition" by Pavel Yosifovich, Mark E. Russinovich, David A. Solomon, Alex Ionescu](https://www.microsoftpressstore.com/store/windows-internals-part-1-system-architecture-processes-9780735684188)  
@@ -1025,6 +1090,7 @@ https://www.alex-ionescu.com/?p=231
 	> The structure that holds the metadata might be the 'PoolBigPageTable' where each entry is a 'POOL_TRACKER_BIG_PAGES' [windows 8].  
 	> https://www.alex-ionescu.com/?p=231
 5. context switching
+	> After a logical processor has selected a new thread to run, it eventually performs a context switch to it . A context switch is the procedure of saving the volatile processor state associated with a running thread, loading another thread’s volatile state, and starting the new thread’s execution 
 6. 'global' and 'per-processor' data.
 7. MSRs (model-specific registers?)
 
@@ -1054,6 +1120,10 @@ https://www.unknowncheats.me/forum/anti-cheat-bypass/418637-eac-processworkingse
 	
 https://gist.github.com/HoShiMin/779d1c5e96e50a653ca43511b7bcb69a   
 * SymParser, for finding address of non-exported kernel functions
+
+"people should be using something like efiguard for these basic things, anything from that GitHub is heavily monitored and usually sigged to frig. efiguard provide everything one need for safe cheating if cannot make your own."
+  \-fisherprice via https://www.unknowncheats.me/forum/2686116-post7.html  
+	* from 2020, shows that EFI has been a topic of discussion for quite a while.
 
 ## Misc ##
 
